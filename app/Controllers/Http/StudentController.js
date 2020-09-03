@@ -1,56 +1,98 @@
 'use strict'
 
 const Database = use('Database')
+const Validator = use('Validator')
+const Hash = use('Hash')
+const Student = use('App/Models/Student')
 
-function numberTypeParamValidator(number){
-    if(Number .isNaN(parseInt(number)))
-    return { error:`param: ${number} is not supported, Please use number type param.` }
-        return {}
+function numberTypeParamValidator(number) {
+    if (Number.isNaN(parseInt(number)))
+        return { error: `param: '${number}' is not supported, please use param as a number.`, }
+    return {}
 }
 
-const Hash = use('Hash')
-
 class StudentController {
-    async index () {
-        const students = await Database.table('students')
-        return { status: 200, error: undefined, data: students}
+    async index({ request }) {
+        const { references } = request.qs
+        const students = Student.query()
+
+        if (references) {
+            const extractedReferences = references.split(",")
+            students.with(extractedReferences)
+        }
+
+        return { status: 200, error: undefined, data: await students.fetch() }
     }
 
-    async show ({ request }) {
+    async show({ request }) {
         const { id } = request.params
 
         const ValidateValue = numberTypeParamValidator(id)
 
         if (ValidateValue.error)
-            return { status: 500, error: validateValue.error, data: undefined}
+            return { status: 500, error: validateValue.error, data: undefined }
 
-        const group = await Database
+        const student = await Student.find(id)
 
-            .from('students')
-            .where("student_id", id)
-            .first()
-
-        return { status: 200, error: undefined, data: group || {} }
+        return { status: 200, error: undefined, data: student || {} }
     }
 
-    async store ({ request }) {
-        const { first_name, last_name, password, email, group_id} = request.body
+    async store({ request }) {
+        const { first_name, last_name, password, email, group_id } = request.body
 
-        const missingKeys = []
-        if (!first_name) missingKeys.push('first_name')
-        if (!last_name) missingKeys.push('last_name')
-        if (!email) missingKeys.push('email')
-        if (!password) missingKeys.push('password')
+        const rules = {
+            first_name: "required",
+            last_name: "required",
+            email: "required|email|unique:students,email",
+            password: "required|min:8",
+            group_id: "required",
+        };
 
-        if (!password) missingKeys.push('password')
-        return {status: 422, error: `${missingKeys} is missing`, data: undefined}
+        const Validation = await Validator.validateAll(request.body, rules)
+
+        if (Validation.fails())
+            return { status: 422, error: Validation.message(), data: undefined }
 
         const hashedPassword = await Hash.make(password)
-        const group = await Database
-            .table('students')
-            .insert({ first_name, last_name, password: hashedPassword, email, group_id})
 
-        return { status: 200 , error: undefined, data: { first_name, last_name, password, email, group_id }}
+        const student = new Student()
+        student.first_name = first_name
+        student.last_name = last_name
+        student.email = email
+        student.password = hashedPassword
+        student.group_id = group_id
+
+        await student.save()
+
+        return { status: 200, error: undefined, data: student }
+    }
+
+    async update({ request }) {
+        const { body, params } = request
+
+        const { id } = params
+
+        const { first_name, last_name, email, group_id } = body
+
+        const student = await Student.find(id)
+
+        student.merge({ first_name, last_name, email, group_id })
+
+        await student.save()
+
+        return {
+            status: 200,
+            error: undefined,
+            data: student,
+        }
+    }
+
+    async destroy({ request }) {
+        const { id } = request.params
+
+        await Database.table("students").where({ student_id: id }).delete()
+
+        return { status: 200, error: undefined, data: { message: "success" } }
     }
 }
 

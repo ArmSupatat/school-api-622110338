@@ -1,53 +1,91 @@
 'use strict'
 
 const Database = use('Database')
+const Validator = use('Validator')
+const Subject = use('App/Models/Subject')
 
-function numberTypeParamValidator(number){
-    if(Number .isNaN(parseInt(number)))
-    return { error:`param: ${number} is not supported, Please use number type param.` }
-        return {}
+function numberTypeParamValidator(number) {
+    if (Number.isNaN(parseInt(number)))
+        return { error: `param: '${number}' is not supported, please use param as a number.`, }
+    return {}
 }
 
 class SubjectController {
-    async index () {
-        const subjects = await Database.table('subjects')
-        return { status: 200, error: undefined, data: subjects}
+    async index({ request }) {
+        //? //=subjects?references=teachers
+        const { references = undefined } = request.qs
+
+        const subject = Subject.query()
+
+        if (references) {
+            const extractedReferences = references.split(",")
+            subjects.with(extractedReferences)
+        }
+
+        return { status: 200, error: undefined, data: await subject.fetch() };
     }
 
-    async show ({ request }) {
+    async show({ request }) {
         const { id } = request.params
 
-        const ValidateValue = numberTypeParamValidator(id)
+        const validatedValue = numberTypeParamValidator(id)
 
         if (ValidateValue.error)
-            return { status: 500, error: validateValue.error, data: undefined}
+            return { status: 500, error: validateValue.error, data: undefined }
 
-        const subject = await Database
+        const subject = await Subject.find(id)
 
-            .from('subjects')
-            .where("subject_id", id)
-            .first()
-
-        return { status: 200, error: undefined, data: group || {} }
+        return { status: 200, error: undefined, data: subject || {} }
     }
 
-    async store ({ request }) {
+    async store({ request }) {
         const { title, teacher_id } = request.body
 
-        const missingKeys = []
-        if (!first_name) missingKeys.push('first_name')
-        if (!last_name) missingKeys.push('last_name')
-        if (!email) missingKeys.push('email')
-        if (!password) missingKeys.push('password')
+        const rules = {
+            title: 'required',
+            teacher_id: 'required',
+        }
 
-        if (!password) missingKeys.push('password')
-        return {status: 422, error: `${missingKeys} is missing`, data: undefined}
+        const Validation = await Validator.validateAll(request.body, rules)
 
-        const group = await Database
-            .table('subjects')
-            .insert({ title, teacher_id })
+        if (Validation.fails())
+            return { status: 422, error: Validation.message(), data: undefined }
 
-        return { status: 200 , error: undefined, data: { title, teacher_id }}
+        const subject = new Subject()
+        subject.title = title
+        subject.teacher_id = teacher_id
+
+        await subject.save()
+
+        return { status: 200, error: undefined, data: subject }
+    }
+
+    async update({ request }) {
+        const { body, params } = request
+
+        const { id } = params
+
+        const { title } = body
+
+        const subject = await Subject.find(id)
+
+        subject.merge({ title })
+
+        await subject.save()
+
+        return {
+            status: 200,
+            error: undefined,
+            data: subject,
+        }
+    }
+
+    async destroy({ request }) {
+        const { id } = request.params
+
+        await Database.table('subjects').where({ subject_id: id }).delete()
+
+        return { status: 200, error: undefined, data: { message: 'success' } }
     }
 }
 
